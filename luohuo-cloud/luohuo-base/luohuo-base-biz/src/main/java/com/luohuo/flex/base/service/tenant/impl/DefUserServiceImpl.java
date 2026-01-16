@@ -1,10 +1,14 @@
 package com.luohuo.flex.base.service.tenant.impl;
 
+import cn.dev33.satoken.SaManager;
+import cn.dev33.satoken.temp.SaTempUtil;
 import cn.hutool.core.bean.BeanUtil;
 import cn.hutool.core.convert.Convert;
 import cn.hutool.core.util.RandomUtil;
 import cn.hutool.core.util.StrUtil;
 import cn.hutool.crypto.SecureUtil;
+import cn.hutool.json.JSONUtil;
+import cn.hutool.json.JSONObject;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.luohuo.basic.cache.redis2.CacheResult;
@@ -219,6 +223,22 @@ public class DefUserServiceImpl extends SuperCacheServiceImpl<DefUserManager, Lo
     public Boolean updateState(Long id, Boolean state) {
         // 演示环境专用标识，用于WriteInterceptor拦截器判断演示环境需要禁止用户执行sql，若您无需搭建演示环境，可以删除下面一行代码
         ContextUtil.setStop();
+        if (Boolean.FALSE.equals(state) && id != null) {
+            try {
+               List<String> keys = SaManager.getSaTokenDao().searchData("Token:temp-token:", "", 0, -1, false);
+                for (String key : keys) {
+                    Object val = SaManager.getSaTokenDao().get(key);
+                    if (val != null) {
+                        JSONObject obj = JSONUtil.parseObj(val.toString());
+                        Long kUserId = obj.getLong("userId");
+                        if (kUserId != null && kUserId.equals(id)) {
+                            String rt = StrUtil.subAfter(key, "Token:temp-token:", true);
+                            SaTempUtil.deleteToken(rt);
+                        }
+                    }
+                }
+            } catch (Exception ignored) {}
+        }
         return superManager.updateById(DefUser.builder().state(state).id(id).build());
     }
 

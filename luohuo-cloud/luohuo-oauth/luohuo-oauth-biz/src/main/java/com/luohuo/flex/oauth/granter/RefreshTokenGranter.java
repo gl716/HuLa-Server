@@ -16,6 +16,7 @@
 
 package com.luohuo.flex.oauth.granter;
 
+import cn.dev33.satoken.SaManager;
 import cn.dev33.satoken.config.SaTokenConfig;
 import cn.dev33.satoken.session.SaSession;
 import cn.dev33.satoken.session.SaTerminalInfo;
@@ -24,14 +25,20 @@ import cn.dev33.satoken.stp.StpUtil;
 import cn.dev33.satoken.temp.SaTempUtil;
 import cn.hutool.core.collection.CollUtil;
 import cn.hutool.core.util.ObjectUtil;
+import cn.hutool.core.util.StrUtil;
 import cn.hutool.json.JSONObject;
 import cn.hutool.json.JSONUtil;
 import com.luohuo.basic.context.ContextUtil;
 import com.luohuo.basic.exception.TokenExceedException;
+import com.luohuo.basic.exception.UnauthorizedException;
+import com.luohuo.basic.exception.code.ResponseEnum;
 import com.luohuo.basic.utils.SpringUtils;
 import com.luohuo.flex.common.utils.ToolsUtil;
+import com.luohuo.flex.base.entity.tenant.DefUser;
+import com.luohuo.flex.base.service.tenant.DefUserService;
 import com.luohuo.flex.model.entity.ws.OffLineResp;
 import com.luohuo.flex.oauth.event.TokenExpireEvent;
+import com.luohuo.flex.im.api.ImUserApi;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -55,6 +62,10 @@ public class RefreshTokenGranter {
 
     @Resource
     protected SaTokenConfig saTokenConfig;
+    @Resource
+    private DefUserService defUserService;
+    @Resource
+    private ImUserApi imUserApi;
 
     public LoginResultVO refresh(String refreshToken) {
         // 1、验证
@@ -64,8 +75,15 @@ public class RefreshTokenGranter {
         JSONObject obj = JSONUtil.parseObj(str);
         Long userId = obj.getLong(JWT_KEY_USER_ID);
         log.info("token={},obj={}", refreshToken, obj);
-        if (userId == null) {
+        if (str == null || userId == null) {
 			throw TokenExceedException.expired();
+        }
+        DefUser defUser = defUserService.getByIdCache(userId);
+        if (defUser == null) {
+            throw UnauthorizedException.wrap(ResponseEnum.JWT_USER_INVALID);
+        }
+        if (!Boolean.TRUE.equals(defUser.getState())) {
+            throw UnauthorizedException.wrap(ResponseEnum.JWT_USER_DISABLE);
         }
 
         Long topCompanyId = obj.getLong(JWT_KEY_TOP_COMPANY_ID);
@@ -77,6 +95,11 @@ public class RefreshTokenGranter {
 		String device = obj.getStr(JWT_KEY_DEVICE);
         String clientId = obj.getStr(CLIENT_ID);
 
+        Boolean black = imUserApi.isBlack(uid, ContextUtil.getIP()).getData();
+        if (Boolean.TRUE.equals(black)) {
+            throw UnauthorizedException.wrap(ResponseEnum.JWT_USER_DISABLE);
+        }
+
         // 2、处理挤下线逻辑
         String combinedDeviceType = kickout(uid, userId, systemType, device, clientId);
 
@@ -87,6 +110,11 @@ public class RefreshTokenGranter {
 		tokenSession.set(JWT_KEY_SYSTEM_TYPE, systemType);
 		tokenSession.set(JWT_KEY_DEVICE, device);
         tokenSession.set(CLIENT_ID, clientId);
+
+        // 清理当前会话下历史刷新令牌，避免重复与残留
+        clearSessionRefreshTokens(tokenSession);
+        // 统一策略：全局清理该用户历史临时token，确保刷新后仅保留最新的一枚
+        deleteTempTokensByLoginId(userId);
 
         if (topCompanyId != null) {
             tokenSession.set(JWT_KEY_TOP_COMPANY_ID, topCompanyId);
@@ -120,6 +148,13 @@ public class RefreshTokenGranter {
 		resultVO.setClient(device);
 		resultVO.setUid(uid);
         resultVO.setRefreshToken(SaTempUtil.createToken(obj.toString(), 2 * saTokenConfig.getTimeout()));
+		try {
+			List<String> refreshTokens = new ArrayList<>();
+			refreshTokens.add(resultVO.getRefreshToken());
+			tokenSession.set("refreshTokens", refreshTokens);
+		} catch (Exception e) {
+            log.error(e.getMessage(), e);
+        }
         return resultVO;
     }
 
@@ -158,7 +193,7 @@ public class RefreshTokenGranter {
                 try {
                     String clientId = StpUtil.getTokenSessionByToken(token).getString(CLIENT_ID);
                     if (currentClientId == null || !currentClientId.equals(clientId)) {
-                        StpUtil.kickout(token);
+                        StpUtil.kickoutByTokenValue(token);
                         log.info("刷新token时已踢出旧会话: token={}", token);
                         SpringUtils.publishEvent(new TokenExpireEvent(this, new OffLineResp(uid, deviceType, clientId, ContextUtil.getIP(), token)));
                     } else {
@@ -170,6 +205,47 @@ public class RefreshTokenGranter {
             }
         }
         return combinedDeviceType;
+    }
+
+    private void clearSessionRefreshTokens(SaSession sess) {
+        if (sess == null) {
+            return;
+        }
+        try {
+            Object rtObj = sess.get("refreshTokens");
+            if (rtObj instanceof java.util.List) {
+                for (Object rto : (java.util.List<?>) rtObj) {
+                    if (rto != null) {
+                        SaTempUtil.deleteToken(rto.toString());
+                    }
+                }
+                sess.delete("refreshTokens");
+            }
+        } catch (Exception e) {
+            log.error(e.getMessage(), e);
+        }
+    }
+
+    private void deleteTempTokensByLoginId(Object loginId) {
+        if (loginId == null) {
+            return;
+        }
+        try {
+            List<String> keys = SaManager.getSaTokenDao().searchData("Token:temp-token:", "", 0, -1, false);
+            for (String key : keys) {
+                Object val = SaManager.getSaTokenDao().get(key);
+                if (val != null) {
+                    JSONObject obj = JSONUtil.parseObj(val.toString());
+                    Long kUserId = obj.getLong("userId");
+                    if (kUserId != null && kUserId.toString().equals(String.valueOf(loginId))) {
+                        String rt = StrUtil.subAfter(key, "Token:temp-token:", true);
+                        SaTempUtil.deleteToken(rt);
+                    }
+                }
+            }
+        } catch (Exception e) {
+            log.error(e.getMessage(), e);
+        }
     }
 
 }

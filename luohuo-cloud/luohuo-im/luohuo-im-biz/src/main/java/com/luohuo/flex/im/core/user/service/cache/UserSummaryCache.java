@@ -128,10 +128,11 @@ public class UserSummaryCache extends AbstractRedisStringCache<Long, SummeryInfo
 	}
 
 	@TenantIgnore
-	@Cacheable(cacheNames = "luohuo:user", key = "'blackList'")
+//	@Cacheable(cacheNames = "luohuo:user", key = "'blackList'")
 	public Map<Integer, Set<String>> getBlackMap() {
 		LocalDateTime now = LocalDateTime.now();
-		Map<Integer, List<Black>> collect = blackDao.getBaseMapper().selectList(new QueryWrapper<Black>().gt("deadline", now)).stream().collect(Collectors.groupingBy(Black::getType));
+		List<Black> blacks = blackDao.getBaseMapper().selectList(new QueryWrapper<Black>().gt("deadline", now));
+		Map<Integer, List<Black>> collect = blacks.stream().collect(Collectors.groupingBy(Black::getType));
 		Map<Integer, Set<String>> result = new HashMap<>(collect.size());
 		for (Map.Entry<Integer, List<Black>> entry : collect.entrySet()) {
 			result.put(entry.getKey(), entry.getValue().stream().map(Black::getTarget).collect(Collectors.toSet()));
@@ -139,7 +140,7 @@ public class UserSummaryCache extends AbstractRedisStringCache<Long, SummeryInfo
 		return result;
 	}
 
-	@CacheEvict(cacheNames = "luohuo:user", key = "'blackList'")
+//	@CacheEvict(cacheNames = "luohuo:user", key = "'blackList'")
 	public Map<Integer, Set<String>> evictBlackMap() {
 		return null;
 	}

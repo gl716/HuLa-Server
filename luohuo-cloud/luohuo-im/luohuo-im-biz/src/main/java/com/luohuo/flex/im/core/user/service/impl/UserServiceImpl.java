@@ -17,7 +17,6 @@ import com.luohuo.flex.im.core.chat.service.RoomAppService;
 import com.luohuo.flex.im.core.user.service.cache.DefUserCache;
 import com.luohuo.flex.im.core.user.service.cache.ItemCache;
 import com.luohuo.flex.im.core.user.service.cache.UserCache;
-import com.luohuo.flex.im.domain.vo.req.PageBaseReq;
 import com.luohuo.flex.im.domain.vo.req.user.*;
 import com.luohuo.flex.im.domain.vo.res.PageBaseResp;
 import com.luohuo.flex.im.domain.vo.resp.user.BlackPageResp;
@@ -236,14 +235,12 @@ public class UserServiceImpl implements UserService {
             blackDao.save(black);
         }
 
-        // 如果是拉黑用户，同时拉黑其IP
+        // 如果是拉黑用户，仅封禁账号
         if (BlackTypeEnum.UID.getType().equals(req.getType())) {
             try {
                 Long uid = Long.parseLong(target);
                 User user = userDao.getById(uid);
                 if (user != null) {
-                    blackIp(user.getIpInfo().getCreateIp(), deadline);
-                    blackIp(user.getIpInfo().getUpdateIp(), deadline);
                     SpringUtils.publishEvent(new UserBlackEvent(this, user));
                 }
             } catch (NumberFormatException e) {
@@ -382,6 +379,7 @@ public class UserServiceImpl implements UserService {
                 .name(userName)
                 .giteeId(userRegisterVo.getGiteeId())
                 .githubId(userRegisterVo.getGithubId())
+                .gitcodeId(userRegisterVo.getGitcodeId())
                 .resume("这个人还没有填写个人简介呢")
                 .tenantId(userRegisterVo.getTenantId())
                 .context(false)
@@ -581,5 +579,15 @@ public class UserServiceImpl implements UserService {
                 .collect(Collectors.toList());
 
         return PageBaseResp.init((int) userPage.getCurrent(), (int) userPage.getSize(), userPage.getTotal(), list);
+    }
+
+    @Override
+    public Boolean isBlack(Long uid, String ip) {
+        var blackMap = userSummaryCache.getBlackMap();
+        var uidSet = blackMap.get(BlackTypeEnum.UID.getType());
+        var ipSet = blackMap.get(BlackTypeEnum.IP.getType());
+        boolean uidHit = uid != null && uidSet != null && uidSet.contains(uid.toString());
+        boolean ipHit = StrUtil.isNotBlank(ip) && ipSet != null && ipSet.contains(ip);
+        return uidHit || ipHit;
     }
 }

@@ -49,4 +49,9 @@ public class ImUserApiFallback implements ImUserApi {
     public R<Boolean> refreshIpInfo(RefreshIpInfo refreshIpInfo) {
         return R.success(true);
     }
+
+    @Override
+    public R<Boolean> isBlack(Long uid, String ip) {
+        return R.success(false);
+    }
 }

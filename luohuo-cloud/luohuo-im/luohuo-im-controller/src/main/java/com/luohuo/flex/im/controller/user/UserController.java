@@ -167,4 +167,11 @@ public class UserController {
         return R.success(userService.searchUser(req));
     }
 
+    @GetMapping("/black/isBlack")
+    @Operation(summary ="判断是否在黑名单")
+    public R<Boolean> isBlack(@RequestParam(value = "uid", required = false) Long uid,
+                              @RequestParam(value = "ip", required = false) String ip) {
+        return R.success(userService.isBlack(uid, ip));
+    }
+
 }

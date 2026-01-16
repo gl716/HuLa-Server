@@ -294,6 +294,11 @@ HuLa-Server 是一款基于 SpringCloud、SpringBoot3、Netty、MyBatis-Plus 和
 <img src="preview/zfb.png" width="260" height="280" alt="赞助码" style="border-radius: 12px; margin-left: 40px" />
 </div>
 
+## 引用与致谢
+- 本项目框架功能或设计参考了 lamp-cloud，特此致谢并注明来源
+- 项目地址：https://github.com/dromara/lamp-cloud
+- 若在你的项目中借鉴或学习了本项目源码，请显著注明引用并附上本项目地址
+
 
 ## 💬 加入社区
 

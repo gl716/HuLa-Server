@@ -132,6 +132,11 @@ Thanks to the following sponsors for their support!
 | 📱 | QR Code Scan Login | ![Completed](https://img.shields.io/badge/✅-Completed-008080?style=flat&labelColor=e6f7f7&color=008080) |
 | 💻 | Multi-device Login Management | ![Completed](https://img.shields.io/badge/✅-Completed-008080?style=flat&labelColor=e6f7f7&color=008080) |
 
+## References and Acknowledgments
+- This project framework draws inspiration from lamp-cloud in its functionality or design. We hereby express our gratitude and acknowledge the source.
+- project address：https://github.com/dromara/lamp-cloud
+- If you have borrowed or learned from the source code of this project, please clearly indicate the reference and include the project address.
+
 ### 💬 Message Communication
 | Feature | Description | Status |
 |---------|-------------|--------|

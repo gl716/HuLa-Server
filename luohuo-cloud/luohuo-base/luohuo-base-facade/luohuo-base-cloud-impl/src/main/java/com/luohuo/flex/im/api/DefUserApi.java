@@ -50,4 +50,8 @@ public interface DefUserApi {
      */
     @PostMapping(value = "/anyone/getSysUserById")
     R<SysUser> getById(@RequestBody UserQuery userQuery);
+
+    @PostMapping("/defUser/onlineUsers/logout")
+    R<Boolean> logout(@RequestParam(value = "userId", required = false) Long userId,
+                      @RequestParam(value = "token", required = false) String token);
 }

@@ -29,6 +29,7 @@ import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RestController;
 import com.luohuo.basic.base.R;
 import com.luohuo.basic.exception.BizException;
@@ -92,38 +93,28 @@ public class RootController {
 		return tokenGranterBuilder.getGranter(login.getGrantType()).login(login);
 	}
 
-	@GetMapping("/anyTenant/gitee/authorize-url")
-	@Operation(summary = "获取 Gitee 授权地址")
+	@GetMapping("/anyTenant/{provider}/callback")
+	@Operation(summary = "OAuth 授权回调")
 	@TenantIgnore
-	public R<String> giteeAuthorizeUrl(@RequestParam(value = "redirect", required = false) String redirect) {
-		String redirectUri = defaultRedirectUri;
-		if (StrUtil.isNotBlank(redirectUri)) {
-			redirectUri = redirectUri.trim();
-			if (redirectUri.endsWith("/")) {
-				redirectUri = StrUtil.subBefore(redirectUri, "/", true);
-			}
-		}
-
-		String encoded = URLEncoder.encode(redirectUri, StandardCharsets.UTF_8);
-		String url = "https://gitee.com/oauth/authorize?client_id=" + giteeClientId + "&redirect_uri=" + encoded + "&response_type=code" +
-				(StrUtil.isNotBlank(redirect) ? "&state=" + URLEncoder.encode(redirect, StandardCharsets.UTF_8) : "");
-		log.info("Generated Gitee Auth URL: {}, redirectUri used: {}", url, redirectUri);
-		return R.success(url);
-	}
-
-	@GetMapping("/anyTenant/gitee/callback")
-	@Operation(summary = "Gitee 授权回调")
-	@TenantIgnore
-	public void giteeCallback(@RequestParam("code") String code,
+	public void oauthCallback(@PathVariable("provider") String provider,
+							  @RequestParam("code") String code,
 							  @RequestParam(value = "state", required = false) String state,
 							  @RequestParam(value = "redirect", required = false) String redirect,
 							  HttpServletResponse response) throws IOException {
 		WebUtils.request().setAttribute("OAUTH_INTERNAL_CALLBACK", true);
+		String pv = provider == null ? "" : provider.toLowerCase();
 		if (StrUtil.isBlank(redirect) && StrUtil.isNotBlank(state)) {
 			redirect = state;
 		}
+		GrantType grantType = GrantType.get(pv);
+		if (grantType == null || !(grantType == GrantType.GITEE || grantType == GrantType.GITHUB || grantType == GrantType.GITCODE)) {
+			response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
+			response.setContentType("application/json;charset=UTF-8");
+			response.getWriter().write("{\"success\":false,\"msg\":\"不支持的回调类型\"}");
+			return;
+		}
 		LoginParamVO login = LoginParamVO.builder()
-				.grantType(GrantType.GITEE)
+				.grantType(grantType)
 				.code(code)
 				.systemType(2)
 				.deviceType("PC")
@@ -150,116 +141,40 @@ public class RootController {
 		}
 	}
 
-	@GetMapping("/anyTenant/gitcode/callback")
-	@Operation(summary = "GitCode 授权回调")
+	@GetMapping("/anyTenant/{provider}/authorize-url")
+	@Operation(summary = "获取授权地址")
 	@TenantIgnore
-	public void gitcodeCallback(@RequestParam("code") String code,
-								@RequestParam(value = "state", required = false) String state,
-								@RequestParam(value = "redirect", required = false) String redirect,
-								HttpServletResponse response) throws IOException {
-		WebUtils.request().setAttribute("OAUTH_INTERNAL_CALLBACK", true);
-		if (StrUtil.isBlank(redirect) && StrUtil.isNotBlank(state)) {
-			redirect = state;
-		}
-		LoginParamVO login = LoginParamVO.builder()
-				.grantType(GrantType.GITCODE)
-				.code(code)
-				.systemType(2)
-				.deviceType("PC")
-				.clientId("WEB")
-				.build();
-		R<LoginResultVO> result = tokenGranterBuilder.getGranter(login.getGrantType()).login(login);
-		if (!result.getsuccess()) {
-			response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
-			response.setContentType("application/json;charset=UTF-8");
-			response.getWriter().write("{\"success\":false,\"msg\":\"" + result.getMsg() + "\"}");
-			return;
-		}
-		LoginResultVO vo = result.getData();
-		if (StrUtil.isNotBlank(redirect)) {
-			String location = redirect + "?token=" + URLEncoder.encode(vo.getToken(), StandardCharsets.UTF_8)
-					+ "&refreshToken=" + URLEncoder.encode(vo.getRefreshToken(), StandardCharsets.UTF_8)
-					+ "&uid=" + URLEncoder.encode(String.valueOf(vo.getUid()), StandardCharsets.UTF_8)
-					+ (StrUtil.isNotBlank(state) ? "&state=" + URLEncoder.encode(state, StandardCharsets.UTF_8) : "");
-			response.setStatus(HttpServletResponse.SC_FOUND);
-			response.setHeader("Location", location);
+	public R<String> authorizeUrl(@PathVariable("provider") String provider, @RequestParam(value = "redirect", required = false) String redirect) {
+		String pv = provider == null ? "" : provider.toLowerCase();
+		String redirectUri;
+		String url;
+		if ("gitee".equals(pv)) {
+			redirectUri = normalizeRedirectUri(defaultRedirectUri);
+			String encoded = URLEncoder.encode(redirectUri, StandardCharsets.UTF_8);
+			url = "https://gitee.com/oauth/authorize?client_id=" + giteeClientId + "&redirect_uri=" + encoded + "&response_type=code" + (StrUtil.isNotBlank(redirect) ? "&state=" + URLEncoder.encode(redirect, StandardCharsets.UTF_8) : "");
+		} else if ("github".equals(pv)) {
+			redirectUri = normalizeRedirectUri(githubRedirectUri);
+			String encoded = URLEncoder.encode(redirectUri, StandardCharsets.UTF_8);
+			url = "https://github.com/login/oauth/authorize?client_id=" + githubClientId + "&redirect_uri=" + encoded + "&scope=user:email" + (StrUtil.isNotBlank(redirect) ? "&state=" + URLEncoder.encode(redirect, StandardCharsets.UTF_8) : "");
+		} else if ("gitcode".equals(pv)) {
+			redirectUri = normalizeRedirectUri(gitcodeRedirectUri);
+			String encoded = URLEncoder.encode(redirectUri, StandardCharsets.UTF_8);
+			url = "https://gitcode.com/oauth/authorize?client_id=" + gitcodeClientId + "&redirect_uri=" + encoded + "&response_type=code" + (StrUtil.isNotBlank(redirect) ? "&state=" + URLEncoder.encode(redirect, StandardCharsets.UTF_8) : "");
 		} else {
-			response.setContentType("application/json;charset=UTF-8");
-			response.getWriter().write("{\"success\":true,\"token\":\"" + vo.getToken() + "\",\"refreshToken\":\"" + vo.getRefreshToken() + "\",\"uid\":\"" + vo.getUid() + "\"}");
+			throw new BizException("授权类型不支持");
 		}
-	}
-	@GetMapping("/anyTenant/github/authorize-url")
-	@Operation(summary = "获取 GitHub 授权地址")
-	@TenantIgnore
-	public R<String> githubAuthorizeUrl(@RequestParam(value = "redirect", required = false) String redirect) {
-		String redirectUri = githubRedirectUri;
-		if (StrUtil.isNotBlank(redirectUri)) {
-			redirectUri = redirectUri.trim();
-			if (redirectUri.endsWith("/")) {
-				redirectUri = StrUtil.subBefore(redirectUri, "/", true);
-			}
-		}
-		String encoded = URLEncoder.encode(redirectUri, StandardCharsets.UTF_8);
-		String url = "https://github.com/login/oauth/authorize?client_id=" + githubClientId + "&redirect_uri=" + encoded + "&scope=user:email" +
-				(StrUtil.isNotBlank(redirect) ? "&state=" + URLEncoder.encode(redirect, StandardCharsets.UTF_8) : "");
-		log.info("Generated GitHub Auth URL: {}, redirectUri used: {}", url, redirectUri);
+		log.info("Generated {} Auth URL: {}, redirectUri used: {}", pv, url, redirectUri);
 		return R.success(url);
 	}
 
-	@GetMapping("/anyTenant/gitcode/authorize-url")
-	@Operation(summary = "获取 GitCode 授权地址")
-	@TenantIgnore
-	public R<String> gitcodeAuthorizeUrl(@RequestParam(value = "redirect", required = false) String redirect) {
-		String redirectUri = gitcodeRedirectUri;
+	private String normalizeRedirectUri(String redirectUri) {
 		if (StrUtil.isNotBlank(redirectUri)) {
 			redirectUri = redirectUri.trim();
 			if (redirectUri.endsWith("/")) {
 				redirectUri = StrUtil.subBefore(redirectUri, "/", true);
 			}
 		}
-		String encoded = URLEncoder.encode(redirectUri, StandardCharsets.UTF_8);
-		String url = "https://gitcode.com/oauth/authorize?client_id=" + gitcodeClientId + "&redirect_uri=" + encoded + "&response_type=code" +
-				(StrUtil.isNotBlank(redirect) ? "&state=" + URLEncoder.encode(redirect, StandardCharsets.UTF_8) : "");
-		log.info("Generated GitCode Auth URL: {}, redirectUri used: {}", url, redirectUri);
-		return R.success(url);
-	}
-	@GetMapping("/anyTenant/github/callback")
-	@Operation(summary = "GitHub 授权回调")
-	@TenantIgnore
-	public void githubCallback(@RequestParam("code") String code,
-							   @RequestParam(value = "state", required = false) String state,
-							   @RequestParam(value = "redirect", required = false) String redirect,
-							   HttpServletResponse response) throws IOException {
-		WebUtils.request().setAttribute("OAUTH_INTERNAL_CALLBACK", true);
-		if (StrUtil.isBlank(redirect) && StrUtil.isNotBlank(state)) {
-			redirect = state;
-		}
-		LoginParamVO login = LoginParamVO.builder()
-				.grantType(GrantType.GITHUB)
-				.code(code)
-				.systemType(2)
-				.deviceType("PC")
-				.clientId("WEB")
-				.build();
-		R<LoginResultVO> result = tokenGranterBuilder.getGranter(login.getGrantType()).login(login);
-		if (!result.getsuccess()) {
-			response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
-			response.setContentType("application/json;charset=UTF-8");
-			response.getWriter().write("{\"success\":false,\"msg\":\"" + result.getMsg() + "\"}");
-			return;
-		}
-		LoginResultVO vo = result.getData();
-		if (StrUtil.isNotBlank(redirect)) {
-			String location = redirect + "?token=" + URLEncoder.encode(vo.getToken(), StandardCharsets.UTF_8)
-					+ "&refreshToken=" + URLEncoder.encode(vo.getRefreshToken(), StandardCharsets.UTF_8)
-					+ "&uid=" + URLEncoder.encode(String.valueOf(vo.getUid()), StandardCharsets.UTF_8)
-					+ (StrUtil.isNotBlank(state) ? "&state=" + URLEncoder.encode(state, StandardCharsets.UTF_8) : "");
-			response.setStatus(HttpServletResponse.SC_FOUND);
-			response.setHeader("Location", location);
-		} else {
-			response.setContentType("application/json;charset=UTF-8");
-			response.getWriter().write("{\"success\":true,\"token\":\"" + vo.getToken() + "\",\"refreshToken\":\"" + vo.getRefreshToken() + "\",\"uid\":\"" + vo.getUid() + "\"}");
-		}
+		return redirectUri;
 	}
 
 	@Operation(summary = "刷新token", description = "token过期时，刷新token使用")

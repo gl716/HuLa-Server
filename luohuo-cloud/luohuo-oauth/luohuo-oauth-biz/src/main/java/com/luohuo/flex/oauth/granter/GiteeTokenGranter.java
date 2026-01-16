@@ -88,12 +88,17 @@ public class GiteeTokenGranter extends AbstractTokenGranter {
 						update.setNickName(name);
 					}
 					defUserService.getSuperManager().updateById(update);
-					return defUserService.getSuperManager().getById(byEmail.getId());
+					DefUser existed = defUserService.getSuperManager().getById(byEmail.getId());
+					UserRegisterVo userRegisterVo = new UserRegisterVo();
+					userRegisterVo.setEmail(existed.getEmail());
+					userRegisterVo.setGiteeId(giteeOpenId);
+					imUserApi.bindOAuth(userRegisterVo);
+					return existed;
 				}
 			}
 
 			String username = login;
-			if (!defUserService.checkUsername(username, null)) {
+			if (defUserService.checkUsername(username, null)) {
 				username = login + "_" + giteeOpenId;
 			}
 

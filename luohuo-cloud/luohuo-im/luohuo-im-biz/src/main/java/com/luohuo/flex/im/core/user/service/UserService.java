@@ -130,6 +130,8 @@ public interface UserService {
 	/**
 	 * 绑定第三方账号
 	 */
-	Boolean bindOAuth(UserRegisterVo userRegisterVo);
+    Boolean bindOAuth(UserRegisterVo userRegisterVo);
+
+    Boolean isBlack(Long uid, String ip);
 
 }

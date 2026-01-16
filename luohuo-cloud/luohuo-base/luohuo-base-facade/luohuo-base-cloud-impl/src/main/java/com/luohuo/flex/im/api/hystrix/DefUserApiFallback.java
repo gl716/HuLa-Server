@@ -33,4 +33,9 @@ public class DefUserApiFallback implements DefUserApi {
     public R<SysUser> getById(UserQuery userQuery) {
         return R.timeout();
     }
+
+    @Override
+    public R<Boolean> logout(Long userId, String token) {
+        return R.timeout();
+    }
 }

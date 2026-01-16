@@ -21,8 +21,10 @@ import cn.dev33.satoken.temp.SaTempUtil;
 import cn.hutool.core.collection.CollUtil;
 import cn.hutool.core.convert.Convert;
 import cn.hutool.core.util.ObjectUtil;
+import cn.hutool.core.util.StrUtil;
 import cn.hutool.extra.servlet.JakartaServletUtil;
 import cn.hutool.json.JSONObject;
+import cn.hutool.json.JSONUtil;
 import com.luohuo.basic.exception.TokenExceedException;
 import com.luohuo.flex.common.utils.ToolsUtil;
 import com.luohuo.flex.model.entity.ws.OffLineResp;
@@ -129,6 +131,14 @@ public abstract class AbstractTokenGranter implements TokenGranter {
 
 		// 8. 查询对应系统中的uid
 		Long uid = findUid(defUser.getId(), defUser.getTenantId(), defUser.getSystemType());
+
+		// 8.1 检查黑名单（UID 或 IP）
+		Boolean black = imUserApi.isBlack(uid, ContextUtil.getIP()).getData();
+		if (Boolean.TRUE.equals(black)) {
+			String msg = "你已被拉黑";
+			SpringUtils.publishEvent(new LoginEvent(LoginStatusDTO.fail(defUser.getId(), LoginStatusEnum.USER_ERROR, msg)));
+			return R.fail(msg);
+		}
 
 		// 9. 发布登录事件
 		defUser.refreshIp(ContextUtil.getIP());
@@ -448,6 +458,13 @@ public abstract class AbstractTokenGranter implements TokenGranter {
 		obj.set(CLIENT_ID, clientId);
 		resultVO.setRefreshToken(SaTempUtil.createToken(obj.toString(), 2 * saTokenConfig.getTimeout()));
 
+		try {
+			Object rtObj = tokenSession.get("refreshTokens");
+			List<String> refreshTokens = rtObj instanceof List ? (List<String>) rtObj : new ArrayList<>();
+			refreshTokens.add(resultVO.getRefreshToken());
+			tokenSession.set("refreshTokens", refreshTokens);
+		} catch (Exception ignored) {}
+
 		log.info("用户：{} 登录成功", userInfo.getUsername());
 		return resultVO;
 	}
@@ -508,9 +525,37 @@ public abstract class AbstractTokenGranter implements TokenGranter {
 			String tokenValue = StpUtil.getTokenValue();
 			String deviceType = StpUtil.getLoginDevice();
 			Object loginId = StpUtil.getLoginId();
-			SaSession saSession = StpUtil.getTokenSession();
-			long uid = saSession.getLong(JWT_KEY_U_ID);
-			Long tenantId = saSession.getLong(HEADER_TENANT_ID);
+			SaSession currentSession = StpUtil.getTokenSession();
+			long uid = currentSession.getLong(JWT_KEY_U_ID);
+			Long tenantId = currentSession.getLong(HEADER_TENANT_ID);
+
+			List<String> allRefreshTokens = new ArrayList<>();
+			try {
+				Object rtObj = currentSession.get("refreshTokens");
+				if (rtObj instanceof List) {
+					for (Object rto : (List<?>) rtObj) {
+						if (rto != null) {
+							allRefreshTokens.add(rto.toString());
+						}
+					}
+				}
+				List<String> tokenValuesAll = StpUtil.getTokenValueListByLoginId(loginId);
+				for (String tv : tokenValuesAll) {
+					SaSession sess = StpUtil.getTokenSessionByToken(tv);
+					Object obj = sess.get("refreshTokens");
+					if (obj instanceof List) {
+						for (Object rto : (List<?>) obj) {
+							if (rto != null) {
+								allRefreshTokens.add(rto.toString());
+							}
+						}
+						sess.delete("refreshTokens");
+					}
+				}
+			} catch (Exception ignored) {}
+			for (String rt : allRefreshTokens) {
+				try { SaTempUtil.deleteToken(rt); } catch (Exception ignored) {}
+			}
 
 			// 1. 注销当前会话
 			StpUtil.logout();
@@ -526,6 +571,21 @@ public abstract class AbstractTokenGranter implements TokenGranter {
 					StpUtil.kickoutByTokenValue(token);
 				}
 			});
+
+			try {
+				List<String> keys = SaManager.getSaTokenDao().searchData("Token:temp-token:", "", 0, -1, false);
+				for (String key : keys) {
+					Object val = SaManager.getSaTokenDao().get(key);
+					if (val != null) {
+						JSONObject obj = JSONUtil.parseObj(val.toString());
+						Long kUserId = obj.getLong("userId");
+						if (kUserId != null && kUserId.toString().equals(loginId.toString())) {
+							String token = StrUtil.subAfter(key, "Token:temp-token:", true);
+							SaTempUtil.deleteToken(token);
+						}
+					}
+				}
+			} catch (Exception ignored) {}
 
 			// 5. 检查是否全部设备已退出
 			if(StpUtil.getTokenValueListByLoginId(loginId).isEmpty()){

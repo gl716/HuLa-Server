@@ -33,14 +33,14 @@ public class BlackInterceptor implements HandlerInterceptor {
         Map<Integer, Set<String>> blackMap = userSummaryCache.getBlackMap();
 		if (isBlackList(ContextUtil.getUid(), blackMap.get(BlackTypeEnum.UID.getType()))) {
 			response.setStatus(HttpStatus.OK.value());
-			R<Object> responseData = R.fail("对不起，不在白名单内");
+			R<Object> responseData = R.fail("你已被拉黑");
 			response.setContentType(ContentType.JSON.toString(Charset.forName("UTF-8")));
 			response.getWriter().write(JSONUtil.toJsonStr(responseData));
             return false;
         }
         if (isBlackList(ContextUtil.getIP(), blackMap.get(BlackTypeEnum.IP.getType()))) {
 			response.setStatus(HttpStatus.OK.value());
-			R<Object> responseData = R.fail("对不起，不在白名单内");
+			R<Object> responseData = R.fail("你已被拉黑");
 			response.setContentType(ContentType.JSON.toString(Charset.forName("UTF-8")));
 			response.getWriter().write(JSONUtil.toJsonStr(responseData));
             return false;

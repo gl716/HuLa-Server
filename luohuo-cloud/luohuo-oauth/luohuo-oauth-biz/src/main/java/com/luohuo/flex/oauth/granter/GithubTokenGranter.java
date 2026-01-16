@@ -94,7 +94,7 @@ public class GithubTokenGranter extends AbstractTokenGranter {
 		if (defUser == null) {
 			// 自动注册逻辑
 			String username = login;
-			if (!defUserService.checkUsername(username, null)) {
+			if (defUserService.checkUsername(username, null)) {
 				username = login + "_" + id;
 			}
 
@@ -152,6 +152,7 @@ public class GithubTokenGranter extends AbstractTokenGranter {
 				userRegisterVo.setAvatar(defUser.getAvatar());
 				userRegisterVo.setTenantId(defUser.getTenantId());
 				userRegisterVo.setUserType(UserTypeEnum.NORMAL.getValue());
+				userRegisterVo.setGithubId(id);
 
 				if (!imUserApi.register(userRegisterVo).getData()) {
 					log.error("IM 用户注册失败，GitHub Email: {}", email);

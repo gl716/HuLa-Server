@@ -58,4 +58,8 @@ public interface ImUserApi {
 	 */
 	@PostMapping("/user/refreshIpInfo")
 	R<Boolean> refreshIpInfo(@RequestBody RefreshIpInfo refreshIpInfo);
+
+	@GetMapping("/user/black/isBlack")
+	R<Boolean> isBlack(@RequestParam(value = "uid", required = false) Long uid,
+	                   @RequestParam(value = "ip", required = false) String ip);
 }

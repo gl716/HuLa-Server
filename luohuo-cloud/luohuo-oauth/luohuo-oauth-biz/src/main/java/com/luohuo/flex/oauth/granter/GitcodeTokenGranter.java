@@ -90,12 +90,17 @@ public class GitcodeTokenGranter extends AbstractTokenGranter {
 						update.setNickName(name);
 					}
 					defUserService.getSuperManager().updateById(update);
-					return defUserService.getSuperManager().getById(byEmail.getId());
+					DefUser existed = defUserService.getSuperManager().getById(byEmail.getId());
+					UserRegisterVo userRegisterVo = new UserRegisterVo();
+					userRegisterVo.setEmail(existed.getEmail());
+					userRegisterVo.setGitcodeId(gitcodeOpenId);
+					imUserApi.bindOAuth(userRegisterVo);
+					return existed;
 				}
 			}
 
 			String username = login;
-			if (!defUserService.checkUsername(username, null)) {
+			if (defUserService.checkUsername(username, null)) {
 				username = login + "_" + gitcodeOpenId;
 			}
 
@@ -136,6 +141,33 @@ public class GitcodeTokenGranter extends AbstractTokenGranter {
 				throw new BizException("IM 用户注册失败，可能是邮箱已被绑定");
 			}
 			log.info("IM 用户注册成功: userId={}", defUser.getId());
+		} else {
+			String name = userJson.getStr("name");
+			String avatar = userJson.getStr("avatar_url");
+			String email = userJson.getStr("email");
+			boolean needUpdate = false;
+			DefUser update = new DefUser();
+			update.setId(defUser.getId());
+			if (StrUtil.isNotBlank(avatar) && !StrUtil.equals(avatar, defUser.getAvatar())) {
+				update.setAvatar(avatar);
+				needUpdate = true;
+			}
+			String targetNick = StrUtil.isBlank(name) ? defUser.getNickName() : name;
+			if (StrUtil.isNotBlank(targetNick) && !StrUtil.equals(targetNick, defUser.getNickName())) {
+				update.setNickName(targetNick);
+				needUpdate = true;
+			}
+			if (StrUtil.isNotBlank(email) && !StrUtil.equals(email, defUser.getEmail())) {
+				update.setEmail(email);
+				needUpdate = true;
+			}
+			if (needUpdate) {
+				defUserService.getSuperManager().updateById(update);
+			}
+			UserRegisterVo userRegisterVo = new UserRegisterVo();
+			userRegisterVo.setEmail(defUser.getEmail());
+			userRegisterVo.setGitcodeId(gitcodeOpenId);
+			imUserApi.bindOAuth(userRegisterVo);
 		}
 
 		return defUser;
