@@ -38,3 +38,4 @@ docker/store/**
 docker/console/**
 docker/minio/**
 docker/redis/**
+logs
